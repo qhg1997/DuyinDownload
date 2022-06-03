@@ -5,8 +5,12 @@ import com.alibaba.fastjson.JSONObject;
 import com.ejlchina.okhttps.HTTP;
 import com.ejlchina.okhttps.HttpResult;
 import com.ejlchina.okhttps.OkHttps;
+import okhttp3.Interceptor;
+import okhttp3.Request;
+import okhttp3.Response;
 
 import java.io.File;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -28,7 +32,26 @@ public class DYDownLoad {
     final static String mode = "post";//like
     final static String save = "./";//like
     final static HTTP http = HTTP.builder()
-            .config(builder -> builder.followRedirects(false))
+            .config(builder -> {
+                builder.followRedirects(false);
+                builder.addInterceptor(new Interceptor() {
+                    public final int maxRetry = 5;//最大重试次数
+                    private int retryNum = 0;//假如设置为3次重试的话，则最大可能请求4次（默认1次+3次重试）
+
+                    @Override
+                    public Response intercept(Chain chain) throws IOException {
+                        Request request = chain.request();
+                        Response response = chain.proceed(request);
+                        while (!response.isSuccessful() && retryNum < maxRetry) {
+                            response.close();
+                            retryNum++;
+                            System.out.println("正在重试:[" + retryNum + "]");
+                            response = chain.proceed(request);
+                        }
+                        return response;
+                    }
+                });
+            })
             .addPreprocessor(preChain -> {
                 preChain.getTask()
                         .addHeader("user-agent", "Mozilla/5.0 (Linux; Android 8.0; Pixel 2 Build/OPD3.170816.012) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Mobile Safari/537.36 Edg/87.0.664.66");
@@ -38,19 +61,18 @@ public class DYDownLoad {
     static String nickname = null;
     static String max_cursor = "0";
     static File saveDir = null;
+    static int count = 0;
 
     public static void main(String[] args) throws InterruptedException {
         //用户主页链接
-        final String url = findUrl("https://v.douyin.com/FKn26BL/");
+        final String url = findUrl("https://v.douyin.com/FENhTVS/");
         final String secId = findSecId(url);
         System.out.println("[  提示  ]:用户的sec_id=" + secId);
         //请求列表
         String dataUrl = "https://www.iesdouyin.com/web/api/v2/aweme/" + mode + "/?sec_uid=" + secId + "&count=35&max_cursor=[max_cursor]&aid=1128&_signature=[signature]";
         String signature = "RuMN1wAAJu7w0.6HdIeO2EbjDc&dytk=";
         String replace = dataUrl.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
-        final HttpResult.Body response = http.async(replace)
-                .get().getResult().getBody().cache();
-        final JSONObject result = JSONObject.parseObject(response.toString());
+        final JSONObject result = getResult(replace);
         nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
         saveDir = new File(save + "/" + mode + "/" + nickname);
         if (!saveDir.exists())
@@ -70,7 +92,7 @@ public class DYDownLoad {
             dyinfos.add(dyinfo);
         }
         toDownLoad(dyinfos);
-        System.out.println("任务结束。。。");
+        System.out.println("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "],实际数量" + (saveDir.list().length) + "]");
     }
 
 
@@ -80,47 +102,41 @@ public class DYDownLoad {
                 if (dyinfo.awemeType == 2) {//image
                     System.out.println("图集资源");
                     List<String> links = new ArrayList<>();
-                    HttpResult.Body body = http.sync("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId)
-                            .get().getBody().cache();
-                    JSONObject object = JSONObject.parseObject(body.toString());
+                    JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
                     JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
                     JSONArray images = item_list.getJSONArray("images");
-                    String author = String.join("", dyinfo.author.split("\\r?\\n")).replace(" ", "");
-                    if (author.length() > 50)
-                        author = author.substring(0, 45);
+                    String author = safeFileName(dyinfo.author);
                     for (Object image : images) {
                         JSONObject imageobj = JSONObject.parseObject(image.toString());
                         String url = imageobj.getJSONArray("url_list").getString(3);
                         links.add(url);
                     }
                     for (int i = 0; i < links.size(); i++) {
-                        System.out.println(links.get(i));
                         File file = new File(saveDir, author + "-" + (i + 1) + "-" + System.currentTimeMillis() + ".jpeg");
-                        System.out.println(file.getAbsolutePath());
+                        System.out.println("文件[" + file.getName() + "]开始下载....");
                         OkHttps.sync(links.get(i)).get().getBody().toFile(file).start();
                         System.out.println("图[" + file.getName() + "]下载完成!");
+                        count++;
                     }
                     System.out.println("图集下载完毕");
                 } else if (dyinfo.awemeType == 4) {//video
                     System.out.println("视频资源");
-                    HttpResult.Body body = http.async("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId).get()
-                            .getResult().getBody();
-                    JSONObject object = JSONObject.parseObject(body.toString());
-                    System.out.println(object);
-                    long aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
+                    JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
+                    long aLong;
+                    try {
+                        aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
+                    } catch (Exception e) {
+                        aLong = System.currentTimeMillis();
+                    }
                     Date date = new Date(aLong);
-                    String author = String.join("", dyinfo.author.split("\\r?\\n")).replace(" ", "");
-                    if (author.length() > 50)
-                        author = author.substring(0, 45);
-                    File file = new File(saveDir, format("yyyy-MM-dd HH.mm.ss", date) + "-" + author + ".mp4");
+                    String author = safeFileName(dyinfo.author);
+                    File file = new File(saveDir, format(date) + "-" + author + ".mp4");
                     if (!file.exists()) {
-
-                        System.out.println(file.getName());
-                        System.out.println(file.getAbsolutePath());
+                        System.out.println("文件[" + file.getName() + "]开始下载....");
                         String s = "https://aweme.snssdk.com/aweme/v1/play/?video_id=" + dyinfo.uri + "&radio=1080p&line=0";
-                        System.out.println(s);
                         OkHttps.sync(s).get().getBody().toFile(file).start();
                         System.out.println("[" + file.getName() + "]下载完成....");
+                        count++;
                     } else {
                         System.out.println("已经下载过....");
                     }
@@ -128,38 +144,30 @@ public class DYDownLoad {
                     System.out.println("位置类型：" + dyinfo.awemeType);
                 }
             } else {
-                HttpResult.Body body = http.sync("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId)
-                        .get().getBody().cache();
-                JSONObject object = JSONObject.parseObject(body.toString());
+                JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
                 JSONArray images = object.getJSONArray("item_list").getJSONObject(0).getJSONArray("images");
                 if (images == null || images.isEmpty()) {
                     System.out.println("视频资源");
-                    body = http.async("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId).get()
-                            .getResult().getBody();
-                    object = JSONObject.parseObject(body.toString());
+                    object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
                     long aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
                     Date date = new Date(aLong);
-                    String author = String.join("", dyinfo.author.split("\\r?\\n")).replace(" ", "");
-                    if (author.length() > 50)
-                        author = author.substring(0, 45);
-                    File file = new File(saveDir, format("yyyy-MM-dd HH.mm.ss", date) + "-" + author + ".mp4");
+                    String author = safeFileName(dyinfo.author);
+                    File file = new File(saveDir, format(date) + "-" + author + ".mp4");
                     if (!file.exists()) {
+                        System.out.println("文件[" + file.getName() + "]开始下载....");
                         OkHttps.sync("https://aweme.snssdk.com/aweme/v1/play/?video_id=" + dyinfo.uri + "&radio=1080p&line=0")
                                 .get().getBody().toFile(file).start();
                         System.out.println("[" + file.getName() + "]下载完成....");
+                        count++;
                     } else {
                         System.out.println("已经下载过....");
                     }
                 } else {
                     System.out.println("图集资源");
                     List<String> links = new ArrayList<>();
-                    body = http.sync("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId)
-                            .get().getBody().cache();
-                    object = JSONObject.parseObject(body.toString());
+                    object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
                     JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
-                    String author = String.join("", dyinfo.author.split("\\r?\\n")).replace(" ", "");
-                    if (author.length() > 50)
-                        author = author.substring(0, 45);
+                    String author = safeFileName(dyinfo.author);
                     images = item_list.getJSONArray("images");
                     for (Object image : images) {
                         JSONObject imageobj = JSONObject.parseObject(image.toString());
@@ -168,8 +176,10 @@ public class DYDownLoad {
                     }
                     for (int i = 0; i < links.size(); i++) {
                         File file = new File(saveDir, author + "-" + (i + 1) + "-" + System.currentTimeMillis() + ".jpeg");
+                        System.out.println("文件[" + file.getName() + "]开始下载....");
                         OkHttps.sync(links.get(i)).get().getBody().toFile(file).start();
                         System.out.println("图[" + file.getName() + "]下载完成!");
+                        count++;
                     }
                     System.out.println("图集下载完毕");
                 }
@@ -179,8 +189,10 @@ public class DYDownLoad {
 
     }
 
-    private static String format(String format, Date date) {
-        return new SimpleDateFormat(format).format(date);
+    static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss");
+
+    private static String format(Date date) {
+        return dateFormat.format(date);
     }
 
     private static ArrayList<JSONObject> getDataList(String url) throws InterruptedException {
@@ -188,15 +200,12 @@ public class DYDownLoad {
         ArrayList<JSONObject> objects = new ArrayList<>();
         System.out.println("[  用户  ]: " + nickname);
         while (true) {
-            index += 1;
-            System.out.println("[  提示  ]:正在进行第 " + index + " 次尝试");
+            System.out.println("[  提示  ]:正在进行第 " + index + " 次");
             TimeUnit.MILLISECONDS.sleep(300);
             String signature = "PDHVOQAAXMfFyj02QEpGaDwx1S&dytk=";
             String replace = url.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
-            HttpResult.Body cache = http.sync(replace)
-                    .get()
-                    .getBody().cache();
-            JSONObject res = JSONObject.parseObject(cache.toString());
+            JSONObject res = getResult(replace);
+            index += 1;
             DYDownLoad.max_cursor = res.getString("max_cursor");
             JSONArray aweme_list = res.getJSONArray("aweme_list");
             boolean has_more = res.getBoolean("has_more");
@@ -237,6 +246,27 @@ public class DYDownLoad {
         public String nickname;
         public String uri;
         public Integer awemeType;
+    }
+
+    static JSONObject getResult(String url) {
+        while (true) {
+            HttpResult.Body body = http.sync(url).get().getBody().cache();
+            JSONObject object = JSONObject.parseObject(body.toString());
+            body.close();
+            if (object != null)
+                return object;
+        }
+    }
+
+    final static Pattern pattern = Pattern.compile("[\\s\\\\/:*?\"<>|]");
+
+    static String safeFileName(String str) {
+        str = String.join("", str.split("\\r?\\n"));
+        Matcher matcher = pattern.matcher(str);
+        str = matcher.replaceAll("");
+        if (str.length() > 50)
+            str = str.substring(0, 45);
+        return str;
     }
 
 }
