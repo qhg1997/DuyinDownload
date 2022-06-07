@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.ejlchina.okhttps.HTTP;
 import com.ejlchina.okhttps.HttpResult;
-import com.ejlchina.okhttps.OkHttps;
 import com.qhg.utils.Configs;
 import okhttp3.Interceptor;
 import okhttp3.Request;
@@ -16,7 +15,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -29,10 +27,10 @@ import java.util.stream.Collectors;
  * 描述：
  */
 public class DYDownLoad {
-    final static Pattern url_compile = Pattern.compile("http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*(),]|(\\?:%[0-9a-fA-F][0-9a-fA-F]))+");
-    final static String mode = Configs.get("mode", "post");
-    final static String save = Configs.get("save", "./dyDown");
-    final static HTTP http = HTTP.builder()
+    final Pattern url_compile = Pattern.compile("http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*(),]|(\\?:%[0-9a-fA-F][0-9a-fA-F]))+");
+    final String mode = Configs.get("mode", "post");
+    final String save = Configs.get("save", "./dyDown");
+    final HTTP http = HTTP.builder()
             .config(builder -> {
                 builder.followRedirects(false);
                 builder.addInterceptor(new Interceptor() {
@@ -58,19 +56,41 @@ public class DYDownLoad {
                 preChain.proceed();
             })
             .build();
-    static String nickname = null;
-    static String max_cursor = "0";
-    static final File saveParentDir = new File(new File(save), mode);
-    static File saveDir = null;
-    static int count = 0;
+    final HTTP http0 = HTTP.builder()
+            .config(builder -> builder.addInterceptor(new Interceptor() {
+                public final int maxRetry = 5;//最大重试次数
+                private int retryNum = 0;//假如设置为3次重试的话，则最大可能请求4次（默认1次+3次重试）
 
-    static {
+                @Override
+                public Response intercept(Chain chain) throws IOException {
+                    Request request = chain.request();
+                    Response response = chain.proceed(request);
+                    while (!response.isSuccessful() && retryNum < maxRetry) {
+                        response.close();
+                        retryNum++;
+                        response = chain.proceed(request);
+                    }
+                    return response;
+                }
+            }))
+            .addPreprocessor(preChain -> {
+                preChain.getTask()
+                        .addHeader("user-agent", "Mozilla/5.0 (Linux; Android 8.0; Pixel 2 Build/OPD3.170816.012) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Mobile Safari/537.36 Edg/87.0.664.66");
+                preChain.proceed();
+            })
+            .build();
+    String nickname = null;
+    String max_cursor = "0";
+    final File saveParentDir = new File(new File(save), mode);
+    File saveDir = null;
+    int count = 0;
+
+    {
         if (!saveParentDir.exists())
             System.out.println("父目录[" + saveParentDir.getAbsolutePath() + "]创建" + saveParentDir.mkdirs());
     }
 
-    public static void download() throws InterruptedException {
-        final String link = Configs.get("link");
+    public void download(String link) throws InterruptedException {
         if (link == null) //用户主页链接
             err("配置主页链接");
         final String url = findUrl(link);
@@ -85,7 +105,12 @@ public class DYDownLoad {
         String signature = "RuMN1wAAJu7w0.6HdIeO2EbjDc&dytk=";
         String replace = dataUrl.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
         final JSONObject result = getResult(replace);
-        nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
+        try {
+            nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
+        } catch (Exception e) {
+            System.err.println("下不了");
+            return;
+        }
         saveDir = new File(saveParentDir, nickname);
         if (!saveDir.exists())
             tips("保存目录[" + saveDir.getAbsolutePath() + "]创建" + (saveDir.mkdirs() ? "成功" : "失败"));
@@ -111,16 +136,16 @@ public class DYDownLoad {
             tips("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "]");
     }
 
-    private static void err(String msg) {
+    private void err(String msg) {
         System.err.println(msg);
     }
 
-    private static void tips(String msg) {
+    private void tips(String msg) {
         System.out.println("[  提示  ]: " + msg);
     }
 
 
-    private static void toDownLoad(ArrayList<Dyinfo> dyinfos) {
+    private void toDownLoad(ArrayList<Dyinfo> dyinfos) {
         for (Dyinfo dyinfo : dyinfos) {
             if ("type".equalsIgnoreCase(Configs.get("analyze", "type"))) {
                 if (dyinfo.awemeType == 2) {//image
@@ -143,7 +168,7 @@ public class DYDownLoad {
                     File file = new File(saveDir, format(date) + "-" + author + ".mp4");
                     if (!file.exists()) {
                         String s = "https://aweme.snssdk.com/aweme/v1/play/?video_id=" + dyinfo.uri + "&radio=1080p&line=0";
-                        OkHttps.sync(s).get().getBody().toFile(file).start();
+                        http0.sync(s).get().getBody().toFile(file).start();
                         tips("[" + file.getName() + "]下载完成....");
                         count++;
                     }
@@ -160,7 +185,7 @@ public class DYDownLoad {
                     String author = safeFileName(dyinfo.author);
                     File file = new File(saveDir, format(date) + "-" + author + ".mp4");
                     if (!file.exists()) {
-                        OkHttps.sync("https://aweme.snssdk.com/aweme/v1/play/?video_id=" + dyinfo.uri + "&radio=1080p&line=0")
+                        http0.sync("https://aweme.snssdk.com/aweme/v1/play/?video_id=" + dyinfo.uri + "&radio=1080p&line=0")
                                 .get().getBody().toFile(file).start();
                         tips("[" + file.getName() + "]下载完成....");
                         count++;
@@ -179,7 +204,7 @@ public class DYDownLoad {
 
     }
 
-    private static void extractDownload(List<String> links, JSONArray images, String author) {
+    private void extractDownload(List<String> links, JSONArray images, String author) {
         for (Object image : images) {
             JSONObject imageobj = JSONObject.parseObject(image.toString());
             String url = imageobj.getJSONArray("url_list").getString(3);
@@ -187,27 +212,26 @@ public class DYDownLoad {
         }
         for (int i = 0; i < links.size(); i++) {
             File file = new File(saveDir, author + "-" + (i + 1) + "-" + System.currentTimeMillis() + ".jpeg");
-            OkHttps.sync(links.get(i)).get().getBody().toFile(file).start();
+            http0.sync(links.get(i)).get().getBody().toFile(file).start();
             tips("图[" + file.getName() + "]下载完成!");
             count++;
         }
     }
 
-    static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss");
+    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss");
 
-    private static String format(Date date) {
+    private String format(Date date) {
         return dateFormat.format(date);
     }
 
-    private static ArrayList<JSONObject> getDataList(String url) throws InterruptedException {
+    private ArrayList<JSONObject> getDataList(String url) throws InterruptedException {
         ArrayList<JSONObject> objects = new ArrayList<>();
         tips("[  用户  ]: " + nickname);
         while (true) {
-            TimeUnit.MILLISECONDS.sleep(300);
             String signature = "PDHVOQAAXMfFyj02QEpGaDwx1S&dytk=";
             String replace = url.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
             JSONObject res = getResult(replace);
-            DYDownLoad.max_cursor = res.getString("max_cursor");
+            max_cursor = res.getString("max_cursor");
             JSONArray aweme_list = res.getJSONArray("aweme_list");
             boolean has_more = res.getBoolean("has_more");
             objects.addAll(aweme_list.stream().map(i -> JSONObject.parseObject(i.toString())).collect(Collectors.toList()));
@@ -217,7 +241,7 @@ public class DYDownLoad {
         return objects;
     }
 
-    static String findUrl(String str) {
+    String findUrl(String str) {
         final Matcher matcher = url_compile.matcher(str);
         if (matcher.find())
             return matcher.group();
@@ -229,7 +253,7 @@ public class DYDownLoad {
      *
      * @return sec_id
      */
-    static String findSecId(String url) {
+    String findSecId(String url) {
         HttpResult httpResult = null;
         try {
             httpResult = http.sync(url)
@@ -247,7 +271,7 @@ public class DYDownLoad {
         }
     }
 
-    public static class Dyinfo {
+    public class Dyinfo {
         public String author;
         public String video;
         public String awemeId;
@@ -256,7 +280,7 @@ public class DYDownLoad {
         public Integer awemeType;
     }
 
-    static JSONObject getResult(String url) {
+    JSONObject getResult(String url) {
         while (true) {
             HttpResult.Body body = http.sync(url).get().getBody().cache();
             JSONObject object = JSONObject.parseObject(body.toString());
@@ -266,9 +290,9 @@ public class DYDownLoad {
         }
     }
 
-    final static Pattern pattern = Pattern.compile("[\\s\\\\/:*?\"<>|]");
+    final Pattern pattern = Pattern.compile("[\\s\\\\/:*?\"<>|]");
 
-    static String safeFileName(String str) {
+    String safeFileName(String str) {
         str = String.join("", str.split("\\r?\\n"));
         Matcher matcher = pattern.matcher(str);
         str = matcher.replaceAll("");
