@@ -1,8 +1,5 @@
 package com.qhg;
 
-import java.util.Arrays;
-import java.util.stream.Collectors;
-
 /**
  * 项目名：DuyinDownload
  * 包  名：com.qhg
@@ -73,20 +70,25 @@ public class Main {
             "https://v.douyin.com/YRSUyQL/"
     };
 
+    static String[] arr2 = {
+            "https://v.douyin.com/YRyab4d/",
+            "https://v.douyin.com/YRfNuTv/",
+            "https://v.douyin.com/YRf6Ycq/",
+            "https://v.douyin.com/YRfReA2/",
+            "https://v.douyin.com/YRfLcd1/"
+    };
 
     public static void main(String[] args) throws InterruptedException {
-        System.out.println(arr.length);
-        Arrays.stream(arr).distinct().collect(Collectors.toList()).forEach(System.out::println);
-//        for (String s : arr) {
-//            new Thread(() -> {
-//                try {
-//                    new DYDownLoad().download(s);
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-//            }).start();
-//        }
-//        System.out.println("线程启动全部完成...");
+        for (String s : arr2) {
+            new Thread(() -> {
+                try {
+                    new DYDownLoad().download(s);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        }
+        System.out.println("线程启动全部完成...");
     }
 
 }
