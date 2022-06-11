@@ -34,7 +34,7 @@ public class DYDownLoad {
             .config(builder -> {
                 builder.followRedirects(false);
                 builder.addInterceptor(new Interceptor() {
-                    public final int maxRetry = 5;//最大重试次数
+                    public final int maxRetry = 50;//最大重试次数
                     private int retryNum = 0;//假如设置为3次重试的话，则最大可能请求4次（默认1次+3次重试）
 
                     @Override

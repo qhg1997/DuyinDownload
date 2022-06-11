@@ -27,15 +27,9 @@ public class Main {
             "https://v.douyin.com/YFME7Cr/"
     };
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args)  {
         for (String s : arr) {
-            new Thread(() -> {
-                try {
-                    new DYDownLoad().download(s);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }).start();
+            new Thread(() -> new DYDownLoad().download(s)).start();
         }
         System.out.println("线程启动全部完成...");
     }
