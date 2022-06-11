@@ -90,7 +90,7 @@ public class DYDownLoad {
             System.out.println("父目录[" + saveParentDir.getAbsolutePath() + "]创建" + saveParentDir.mkdirs());
     }
 
-    public void download(String link) throws InterruptedException {
+    public void download(String link) {
         if (link == null) //用户主页链接
             err("配置主页链接");
         final String url = findUrl(link);
@@ -224,7 +224,7 @@ public class DYDownLoad {
         return dateFormat.format(date);
     }
 
-    private ArrayList<JSONObject> getDataList(String url) throws InterruptedException {
+    private ArrayList<JSONObject> getDataList(String url) {
         ArrayList<JSONObject> objects = new ArrayList<>();
         tips("[  用户  ]: " + nickname);
         while (true) {
@@ -271,7 +271,7 @@ public class DYDownLoad {
         }
     }
 
-    public class Dyinfo {
+    public static class Dyinfo {
         public String author;
         public String video;
         public String awemeId;
