@@ -16,7 +16,6 @@ public class Configs {
     static {
         try {
             properties.load(Configs.class.getResourceAsStream("/config.properties"));
-            properties.setProperty("", "");
         } catch (IOException ignored) {
         }
     }
@@ -27,9 +26,5 @@ public class Configs {
 
     public static String get(String key, String _default) {
         return properties.getProperty(key, _default);
-    }
-
-    public static void main(String[] args) {
-        System.out.println(get("2"));
     }
 }
