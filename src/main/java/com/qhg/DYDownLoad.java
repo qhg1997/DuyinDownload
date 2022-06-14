@@ -130,6 +130,7 @@ public class DYDownLoad {
                 nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
                 Thread.currentThread().setName(nickname);
             } catch (Exception e) {
+                err(result.toJSONString());
                 err("主页有可能被屏蔽");
                 return;
             }
@@ -186,41 +187,60 @@ public class DYDownLoad {
         for (Dyinfo dyinfo : dyinfos) {
             if ("type".equalsIgnoreCase(Configs.get("analyze", "type"))) {
                 if (dyinfo.awemeType == 2) {//image
-                    JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
-                    JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
-                    JSONArray images = item_list.getJSONArray("images");
-                    String author = safeFileName(dyinfo.author);
-                    extractDownload(images, author);
-                } else if (dyinfo.awemeType == 4) {//video
-                    JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
-                    long aLong;
+                    JSONObject object = null;
                     try {
-                        aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
+                        object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
+                        JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
+                        JSONArray images = item_list.getJSONArray("images");
+                        String author = safeFileName(dyinfo.author);
+                        extractDownload(images, author);
                     } catch (Exception e) {
-                        aLong = System.currentTimeMillis();
+                        e.printStackTrace();
+                        err(object == null ? null : object.toJSONString());
                     }
-                    downloadVideo(dyinfo, aLong);
+
+                } else if (dyinfo.awemeType == 4) {//video
+                    JSONObject object = null;
+                    try {
+                        object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
+                        long aLong;
+                        try {
+                            aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
+                        } catch (Exception e) {
+                            aLong = System.currentTimeMillis();
+                        }
+                        downloadVideo(dyinfo, aLong);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        err(object == null ? null : object.toJSONString());
+                    }
                 } else {
                     err("未知类型：" + dyinfo.awemeType);
                 }
             } else {
-                JSONObject object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
-                JSONArray images = object.getJSONArray("item_list").getJSONObject(0).getJSONArray("images");
-                if (images == null || images.isEmpty()) {
+                JSONObject object = null;
+                try {
                     object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
-                    long aLong;
-                    try {
-                        aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
-                    } catch (Exception e) {
-                        aLong = System.currentTimeMillis();
+                    JSONArray images = object.getJSONArray("item_list").getJSONObject(0).getJSONArray("images");
+                    if (images == null || images.isEmpty()) {
+                        object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
+                        long aLong;
+                        try {
+                            aLong = object.getJSONArray("item_list").getJSONObject(0).getLong("create_time") * 1000;
+                        } catch (Exception e) {
+                            aLong = System.currentTimeMillis();
+                        }
+                        downloadVideo(dyinfo, aLong);
+                    } else {
+                        object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
+                        JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
+                        String author = safeFileName(dyinfo.author);
+                        images = item_list.getJSONArray("images");
+                        extractDownload(images, author);
                     }
-                    downloadVideo(dyinfo, aLong);
-                } else {
-                    object = getResult("https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=" + dyinfo.awemeId);
-                    JSONObject item_list = object.getJSONArray("item_list").getJSONObject(0);
-                    String author = safeFileName(dyinfo.author);
-                    images = item_list.getJSONArray("images");
-                    extractDownload(images, author);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    err(object == null ? null : object.toJSONString());
                 }
             }
         }
@@ -312,6 +332,7 @@ public class DYDownLoad {
                     .get();
             return httpResult.getHeader("location");
         } catch (Exception e) {
+            err("getLocation: " + url);
             return null;
         } finally {
             if (httpResult != null)
@@ -336,8 +357,10 @@ public class DYDownLoad {
             HttpResult.Body body = http.sync(url).get().getBody().cache();
             JSONObject object = JSONObject.parseObject(body.toString());
             body.close();
-            if (object != null)
+            if (object != null) {
+                object.put("__url__", url);
                 return object;
+            }
         }
     }
 
