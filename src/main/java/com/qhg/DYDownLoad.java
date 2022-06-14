@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -99,72 +101,84 @@ public class DYDownLoad {
     File saveDir = null;
     int count = 0;
     SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss");
+    final Lock lock = new ReentrantLock();
 
     private String format(Date date) {
         return dateFormat.format(date);
     }
 
     public void download(String link) {
-        if (link == null) //用户主页链接
-            err("配置主页链接");
-        final String url = findUrl(link);
-        if (url == null || "".equalsIgnoreCase(url)) //获取长连接
-            err("获取主页长链接失败");
-        final String secId = findSecId(url);
-        if (secId == null || "".equalsIgnoreCase(secId)) //获取sec_id失败
-            err("获取sec_id失败");
-        tips("用户的sec_id=" + secId);
-        //请求列表
-        String dataUrl = "https://www.iesdouyin.com/web/api/v2/aweme/" + mode + "/?sec_uid=" + secId + "&count=35&max_cursor=[max_cursor]&aid=1128&_signature=[signature]";
-        String signature = "RuMN1wAAJu7w0.6HdIeO2EbjDc&dytk=";
-        String replace = dataUrl.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
-        final JSONObject result = getResult(replace);
         try {
-            nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
-        } catch (Exception e) {
-            err("主页有可能被屏蔽");
-            return;
-        }
-        if (!saveParentDir.exists())
-            tips("父目录[" + saveParentDir.getAbsolutePath() + "]创建" + (saveParentDir.mkdirs() ? "成功" : "失败"));
-        saveDir = new File(saveParentDir, nickname);
-        if (!saveDir.exists())
-            tips("保存目录[" + saveDir.getAbsolutePath() + "]创建" + (saveDir.mkdirs() ? "成功" : "失败"));
-        ArrayList<JSONObject> dataList = getDataList(dataUrl);
-        ArrayList<Dyinfo> dyinfos = new ArrayList<>();
-        for (JSONObject o : dataList) {
-            try {
-                Dyinfo dyinfo = new Dyinfo();
-                dyinfo.awemeType = o.getInteger("aweme_type");
-                if (dyinfo.awemeType == 4) {//判断是视频了再去获取video
-                    JSONObject video = o.getJSONObject("video");
-                    JSONObject play_addr = video.getJSONObject("play_addr");
-                    dyinfo.video = play_addr.getJSONArray("url_list").getString(0);
-                    dyinfo.uri = play_addr.getString("uri");
-                }
-                dyinfo.author = o.getString("desc");
-                dyinfo.awemeId = o.getString("aweme_id");
-                dyinfo.nickname = o.getJSONObject("author").getString("nickname");
-                dyinfos.add(dyinfo);
-            } catch (Exception e) {
-                e.printStackTrace();
-                err(o.toJSONString());
+            lock.lock();
+            if (link == null) //用户主页链接
+                err("配置主页链接");
+            final String url = findUrl(link);
+            if (url == null || "".equalsIgnoreCase(url)) //获取长连接
+                err("获取主页长链接失败");
+            final String secId = findSecId(url);
+            if (secId == null || "".equalsIgnoreCase(secId)) { //获取sec_id失败
+                err("获取sec_id失败");
+                tips("用户的sec_id=" + secId);
+                return;
             }
+            //请求列表
+            String dataUrl = "https://www.iesdouyin.com/web/api/v2/aweme/" + mode + "/?sec_uid=" + secId + "&count=35&max_cursor=[max_cursor]&aid=1128&_signature=[signature]";
+            String signature = "RuMN1wAAJu7w0.6HdIeO2EbjDc&dytk=";
+            String replace = dataUrl.replace("[max_cursor]", max_cursor).replace("[signature]", signature);
+            final JSONObject result = getResult(replace);
+            try {
+                nickname = result.getJSONArray("aweme_list").getJSONObject(0).getJSONObject("author").getString("nickname");
+                Thread.currentThread().setName(nickname);
+            } catch (Exception e) {
+                err("主页有可能被屏蔽");
+                return;
+            }
+            if (!saveParentDir.exists())
+                tips("父目录[" + saveParentDir.getAbsolutePath() + "]创建" + (saveParentDir.mkdirs() ? "成功" : "失败"));
+            saveDir = new File(saveParentDir, nickname);
+            if (!saveDir.exists())
+                tips("保存目录[" + saveDir.getAbsolutePath() + "]创建" + (saveDir.mkdirs() ? "成功" : "失败"));
+            ArrayList<JSONObject> dataList = getDataList(dataUrl);
+            ArrayList<Dyinfo> dyinfos = new ArrayList<>();
+            for (JSONObject o : dataList) {
+                try {
+                    Dyinfo dyinfo = new Dyinfo();
+                    dyinfo.awemeType = o.getInteger("aweme_type");
+                    if (dyinfo.awemeType == 4) {//判断是视频了再去获取video
+                        JSONObject video = o.getJSONObject("video");
+                        JSONObject play_addr = video.getJSONObject("play_addr");
+                        dyinfo.video = play_addr.getJSONArray("url_list").getString(0);
+                        dyinfo.uri = play_addr.getString("uri");
+                    }
+                    dyinfo.author = o.getString("desc");
+                    dyinfo.awemeId = o.getString("aweme_id");
+                    dyinfo.nickname = o.getJSONObject("author").getString("nickname");
+                    dyinfos.add(dyinfo);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    err(o.toJSONString());
+                }
+            }
+            toDownLoad(dyinfos);
+            final String[] list = saveDir.list();
+            if (list != null)
+                tips("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "],实际数量" + (list.length) + "]");
+            else
+                tips("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "]");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
         }
-        toDownLoad(dyinfos);
-        final String[] list = saveDir.list();
-        if (list != null)
-            tips("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "],实际数量" + (list.length) + "]");
-        else
-            tips("任务结束。。。爬取条目[" + dyinfos.size() + "],文件下载总数[" + count + "]");
     }
 
     private void err(String msg) {
-        System.err.println(msg);
+        System.err.println("[  " + Thread.currentThread().getName() + ":错误  ]: " + msg);
     }
 
     private void tips(String msg) {
-//        System.out.println("[  提示  ]: " + msg);
+        System.out.println("[  " + Thread.currentThread().getName() + ":提示  ]: " + msg);
     }
 
 
