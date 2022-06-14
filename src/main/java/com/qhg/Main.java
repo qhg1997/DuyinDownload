@@ -1,6 +1,11 @@
 package com.qhg;
 
+import com.qhg.utils.IO;
+
+import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 项目名：DuyinDownload
@@ -10,26 +15,17 @@ import java.util.Arrays;
  * 描述：
  */
 public class Main {
-    static String[] arr = {
-            "https://v.douyin.com/YFM9oMr/",
-            "https://v.douyin.com/YFM3scX/",
-            "https://v.douyin.com/YFMTmKW/",
-            "https://v.douyin.com/YFMw2MP/",
-            "https://v.douyin.com/YFMw3KP/",
-            "https://v.douyin.com/YFMEYk9/",
-            "https://v.douyin.com/YFrRFKs/",
-            "https://v.douyin.com/YFME7Cr/",
-            "https://v.douyin.com/Y2RnJMJ/",
-            "https://v.douyin.com/Y2RTFGW/",
-            "https://v.douyin.com/Y2RGX3c/",
-            "https://v.douyin.com/Y2RbPPq/",
-            "https://v.douyin.com/Y2RCCY1/",
-            "https://v.douyin.com/YYTh8rd/"
-    };
-
-
     public static void main(String[] args) {
-        Arrays.stream(arr).parallel().forEach(item -> new DYDownLoad().download(item));
+        List<String> list;
+        if (args != null && args.length > 0) {
+            list = Arrays.asList(args);
+        } else {
+            final InputStream sharelink = Main.class.getResourceAsStream("/sharelink");
+            list = IO.readLines(sharelink).stream().distinct().collect(Collectors.toList());
+        }
+        System.out.println(list);
+
+        list.parallelStream().forEach(item -> new DYDownLoad().download(item));
     }
 
 }
