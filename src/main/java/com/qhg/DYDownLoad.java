@@ -330,7 +330,7 @@ public class DYDownLoad {
         try {
             httpResult = http.sync(url)
                     .get();
-            return httpResult.getHeader("location");
+            return Optional.ofNullable(httpResult.getHeader("location")).orElse(url+"?");
         } catch (Exception e) {
             err("getLocation: " + url);
             return null;

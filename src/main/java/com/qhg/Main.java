@@ -23,9 +23,8 @@ public class Main {
             final InputStream sharelink = Main.class.getResourceAsStream("/sharelink");
             list = IO.readLines(sharelink).stream().distinct().collect(Collectors.toList());
         }
-        System.out.println(list);
-
-        list.parallelStream().forEach(item -> new DYDownLoad().download(item));
+        DYDownLoad dyDownLoad = new DYDownLoad();
+        list.parallelStream().forEach(dyDownLoad::download);
     }
 
 }
