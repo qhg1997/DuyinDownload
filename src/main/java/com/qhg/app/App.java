@@ -65,65 +65,36 @@ public class App {
     }
 
     public static void main(String[] args) {
-        /* aid 写死的 1128; cookies 必传 sid_guard: (未知) */
-        HttpCall call = OkHttps.async("https://api5-normal-c-lf.amemv.com/aweme/v1/user/block/list/")
-                .addUrlPara("index", "0")
-                .addUrlPara("count", "40")
-//                .addUrlPara("source", "0")
-//                .addUrlPara("hotsoon_filtered_count", "0")
-//                .addUrlPara("hotsoon_has_more", "0")
-//                .addUrlPara("iid", "119187649607335")
-//                .addUrlPara("device_id", "2744795635389447")
-//                .addUrlPara("ac", "wifi")
-//                .addUrlPara("channel", "update")
-                .addUrlPara("aid", "1128")
-//                .addUrlPara("app_name", "aweme")
-//                .addUrlPara("version_code", "230000")
-//                .addUrlPara("version_name", "23.0.0")
-//                .addUrlPara("device_platform", "android")
-//                .addUrlPara("os", "android")
-//                .addUrlPara("ssmix", "a")
-//                .addUrlPara("device_type", "HD1910")
-//                .addUrlPara("device_brand", "OnePlus")
-//                .addUrlPara("language", "zh")
-//                .addUrlPara("os_api", "22")
-//                .addUrlPara("os_version", "5.1.1")
-//                .addUrlPara("manifest_version_code", "230001")
-//                .addUrlPara("resolution", "900*1600")
-//                .addUrlPara("dpi", "300")
-//                .addUrlPara("update_version_code", "23009900")
-//                .addUrlPara("_rticket", "1667801570444")
-//                .addUrlPara("package", "com.ss.android.ugc.aweme")
-//                .addUrlPara("mcc_mnc", "46000")
-//                .addUrlPara("cpu_support64", "false")
-//                .addUrlPara("host_abi", "armeabi-v7a")
-//                .addUrlPara("ts", "1667801569")
-//                .addUrlPara("appTheme", "light")
-//                .addUrlPara("app_type", "normal")
-//                .addUrlPara("need_personal_recommend", "1")
-//                .addUrlPara("is_guest_mode", "0")
-//                .addUrlPara("minor_status", "0")
-//                .addUrlPara("is_android_pad", "0")
-//                .addUrlPara("cdid", "f9fb8792-7ea2-479f-9f7e-796d3c8d1ee5")
-//                .addUrlPara("md", "0.1")
-                .addHeader("Cookie",
-//                        "install_id=119187649607335; " +
-//                        "ttreq=1$65acc1d78f7222e8aad69613fd9e354691e09d1a; " +
-//                        "d_ticket=6507f52c4c51a054ed62a29dbb65e7e3d4033; " +
-//                        "multi_sids=2057875502938608%3Abdd419502028e0bc18f45f5419453be9; " +
-//                                "odin_tt=f8b429c9fc66dff2242a0bd25f8b5a29d50258bc624e38c5519d2dde16f9d1361dd86237aa6d61d9ae36ec44691260c2f6d55cd4d56bb2e82aaf581f61c711a524251752afb4bc4faf8b04ec320f6179; " +
-//                                "n_mh=i2a1GWUt2fNfatSZl3luM-aVn3l5TOs2nf2JV1Pe-1o; " +
-//                                "passport_assist_user=CkGKyMFtdPLUZmL2QRZ4rnsBY-HiVJqBYTf23ue_jOX8MKof0tDT2Eqqh1Dqw0BcgIq3wnA5RbfIGs9clhk9JAtwARpICjwfNV60kWfSGvoA-25xn_gx9yPMQwbrNUxGEuqK8x-rd0toERsgsMpmkQ0LEqjGnVcdzATeOfxLYJxUL7QQ5cegDRiJr9ZUIgEDoFcgCA%3D%3D; " +
-                        "sid_guard=bdd419502028e0bc18f45f5419453be9%7C1667799248%7C5184000%7CFri%2C+06-Jan-2023+05%3A34%3A08+GMT; " +
-//                        "uid_tt=96a2414febdcbe00c48f5df7c1245286; " +
-//                        "sid_tt=bdd419502028e0bc18f45f5419453be9; " +
-//                        "sessionid=bdd419502028e0bc18f45f5419453be9; " +
-//                                "passport_csrf_token_default=b32f2ad19f942c4d14059b927879f54a" +
-                                ""
-                )
-                .get();
-        HttpResult.Body body = call.getResult().getBody();
-        System.out.println(body);
-
+        int index = 0;
+        int count = 10;
+        int sum = 0;
+        HttpCall call;
+        ArrayList<Object> objects = new ArrayList<>();
+        while (true) {
+            call = OkHttps.async("https://api5-normal-c-lf.amemv.com/aweme/v1/user/block/list/")
+                    .addUrlPara("index", index)
+                    .addUrlPara("count", count)
+                    .addUrlPara("aid", "1128")
+                    .addHeader("Cookie", "sid_guard=8637d0ca8a962302edc59c185b55a6ea%7C1675907276%7C5184000%7CMon%2C+10-Apr-2023+01%3A47%3A56+GMT; ")
+                    .get();
+            HttpResult.Body body = call.getResult().getBody().cache();
+            objects.add(body.toString());
+            JSONObject object = JSONObject.parseObject(body.toString());
+            System.out.println(index + "," + count + " : " + object.getInteger("status_code"));
+            sum += object.getJSONArray("block_list").size();
+            if (!object.getBoolean("has_more")) {
+                break;
+            }
+            index += count;
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        String jsons = JSON.toJSONString(objects, true);
+        IO.writeContent(jsons, new File("C:\\Users\\40477\\Desktop\\黑名单.json"));
+        System.out.println("共 " + sum + " 条");
     }
+
 }
